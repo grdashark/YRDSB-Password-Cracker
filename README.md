@@ -8,6 +8,7 @@ ANY damage you use with this tool (please, don't do anything horrible!!!). This 
 Do NOT use this tool illegally. That is called INVASION OF PRIVACY and you can get into trouble 😱😱 ONLY USE
 THIS TOOL ON YOUR ACCOUNT. Unauthorized access, invasion of privacy, and illegal activities are unethical
 and can lead to legal consequences.
+I take no responsibility for its usage by third parties, and any illegal activities are strictly prohibited. Users must comply with the security and privacy policies of social media platforms and obtain proper authorization. The tool may contain potentially harmful materials. Use at your own risk, adhering to relevant laws and regulations.
 
 # Installation
 
