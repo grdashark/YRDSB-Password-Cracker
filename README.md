@@ -22,7 +22,9 @@ and can lead to legal consequences.
 you can delete the .html files. They are essential to cracking YOUR password.**
 
 Usage: python tool.py -u username -p password-list
+
 Brute Force --> python tool.py -u username -b -n amount-of-passwords
+
 Simple mode --> tool.py --simple"
 
 
